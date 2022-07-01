@@ -1,8 +1,6 @@
 package tunnel
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -174,10 +172,8 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 		}
 		dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
 		pfwdPorts := []string{fmt.Sprintf("%d:%d", o.LocalSSHPort, o.RemoteSSHPort)}
-		var bout, berr bytes.Buffer
-		pfwdOut := bufio.NewWriter(&bout)
-		pfwdErr := bufio.NewWriter(&berr)
-		pfwd, err := k8sportforward.New(dialer, pfwdPorts, pfwdStopCh, pfwdReadyCh, pfwdOut, pfwdErr)
+		streams := genericclioptions.NewTestIOStreamsDiscard()
+		pfwd, err := k8sportforward.New(dialer, pfwdPorts, pfwdStopCh, pfwdReadyCh, streams.Out, streams.ErrOut)
 		if err != nil {
 			return err
 		}
