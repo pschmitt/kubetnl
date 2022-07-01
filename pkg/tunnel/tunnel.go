@@ -155,51 +155,16 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 	}
 	klog.V(2).Infof("Pod ready..\n")
 
-	// Setup portforwarding to the pod.
-	pfwdReadyCh := make(chan struct{})   // Closed when portforwarding ready.
-	pfwdStopCh := make(chan struct{}, 1) // is never closed by k8sportforward
-	pfwdDoneCh := make(chan struct{})    // Closed when portforwarding exits.
-	go func() error {
-		// Do a portforwarding to the pods exposed SSH port.
-		req := o.ClientSet.CoreV1().RESTClient().Post().
-			Resource("pods").
-			Namespace(pod.Namespace).
-			Name(pod.Name).
-			SubResource("portforward")
-		transport, upgrader, err := spdy.RoundTripperFor(o.RESTConfig)
-		if err != nil {
-			return err
-		}
-		dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
-		pfwdPorts := []string{fmt.Sprintf("%d:%d", o.LocalSSHPort, o.RemoteSSHPort)}
-		streams := genericclioptions.NewTestIOStreamsDiscard()
-		pfwd, err := k8sportforward.New(dialer, pfwdPorts, pfwdStopCh, pfwdReadyCh, streams.Out, streams.ErrOut)
-		if err != nil {
-			return err
-		}
-		err = pfwd.ForwardPorts() // blocks
-		if err != nil {
-			return fmt.Errorf("error port-forwarding from :%d --> %d: %v", o.LocalSSHPort, o.RemoteSSHPort, err)
-		}
-		// If this errors, also everything following will error.
-		close(pfwdDoneCh)
-		return nil
-	}()
-	defer graceful.Do(ctx, func() {
-		close(pfwdStopCh)
-		<-pfwdDoneCh
-		klog.V(2).Infof("Cleanup: port-forwarding closed")
-	})
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-interruptCtx.Done():
-		return graceful.Interrupted
-	case <-pfwdReadyCh:
-		// Note that having a ready pfwd just means that it is listening
-		// on o.LocalSSHPort.
-		klog.V(2).Infof("Listening to portforward connections from :%d --> %d", o.LocalSSHPort, o.RemoteSSHPort)
+	kf := portforward.KubeForwarder{
+		PodName: pod.Name,
+		PodNamespace: pod.Namespace,
+		LocalPort: o.LocalSSHPort,
+		RemotePort: o.RemoteSSHPort,
+		RESTConfig: o.RESTConfig,
+		ClientSet: o.ClientSet,
+	}
+	if err := kf.Run(ctx); err != nil {
+		return err
 	}
 
 	// HACK: Also the pods is in a ready state, the openssh server may not
