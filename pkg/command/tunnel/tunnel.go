@@ -1,19 +1,16 @@
 package tunnel
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
 
 	"github.com/fischor/kubetnl/pkg/graceful"
+	"github.com/fischor/kubetnl/pkg/net"
 	"github.com/fischor/kubetnl/pkg/port"
 	"github.com/fischor/kubetnl/pkg/tunnel"
 )
-
-
 
 var (
 	tunnelShort = "Setup a new tunnel"
@@ -82,7 +79,7 @@ func Complete(o *tunnel.TunnelOptions, f cmdutil.Factory, cmd *cobra.Command, ar
 	if err != nil {
 		return err
 	}
-	o.RemoteSSHPort, err = chooseSSHPort(o.PortMappings)
+	o.RemoteSSHPort, err = net.ChooseSSHPort(o.PortMappings)
 	if err != nil {
 		return err
 	}
@@ -99,33 +96,4 @@ func Complete(o *tunnel.TunnelOptions, f cmdutil.Factory, cmd *cobra.Command, ar
 		return err
 	}
 	return nil
-}
-
-// chooseSSHPort chooses the port number for the SSH server respecting the ports
-// that are used for incoming traffic.
-func chooseSSHPort(mm []port.Mapping) (int, error) {
-	if !isInUse(mm, 2222) {
-		return 2222, nil
-	}
-	// TODO: for 22 portforwarding somewhat never works.
-	if !isInUse(mm, 22) {
-		return 22, nil
-	}
-	min := 49152
-	max := 65535
-	for i := min; i <= max; i++ {
-		if !isInUse(mm, i) {
-			return i, nil
-		}
-	}
-	return 0, fmt.Errorf("Failed to choose a port for the SSH connection - all ports in use")
-}
-
-func isInUse(mm []port.Mapping, containerPort int) bool {
-	for _, m := range mm {
-		if m.ContainerPortNumber == containerPort {
-			return true
-		}
-	}
-	return false
 }
