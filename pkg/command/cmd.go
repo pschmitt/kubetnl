@@ -4,16 +4,17 @@ import (
 	"flag"
 	"io"
 
-	"github.com/fischor/kubetnl/internal/command/cleanup"
-	"github.com/fischor/kubetnl/internal/command/options"
-	"github.com/fischor/kubetnl/internal/command/tunnel"
-	"github.com/fischor/kubetnl/internal/command/version"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
+
+	"github.com/fischor/kubetnl/pkg/command/cleanup"
+	"github.com/fischor/kubetnl/pkg/command/options"
+	"github.com/fischor/kubetnl/pkg/command/tunnel"
+	"github.com/fischor/kubetnl/pkg/command/version"
 )
 
 var (

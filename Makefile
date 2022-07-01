@@ -2,7 +2,7 @@ PLATFORMS := linux/amd64 windows/amd64 darwin/amd64
 
 VERSION=$(shell git describe HEAD --tags --abbrev=0)
 GIT_COMMIT=$(shell git rev-parse HEAD)
-LD_FLAGS=-ldflags="-X 'github.com/fischor/kubetnl/internal/version.gitCommit=$(GIT_COMMIT)'"
+LD_FLAGS=-ldflags="-X 'github.com/fischor/kubetnl/pkg/version.gitCommit=$(GIT_COMMIT)'"
 MAIN=./main.go
 
 windows:

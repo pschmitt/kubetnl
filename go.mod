@@ -14,3 +14,5 @@ require (
 	k8s.io/klog/v2 v2.9.0
 	k8s.io/kubectl v0.22.1
 )
+
+replace github.com/fischor/kubetnl => /Users/alvaro/Development/kubetnl

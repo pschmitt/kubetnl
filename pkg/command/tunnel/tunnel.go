@@ -10,9 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/fischor/kubetnl/internal/graceful"
-	"github.com/fischor/kubetnl/internal/port"
-	"github.com/fischor/kubetnl/internal/portforward"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/sync/errgroup"
@@ -31,6 +28,10 @@ import (
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
+
+	"github.com/fischor/kubetnl/pkg/graceful"
+	"github.com/fischor/kubetnl/pkg/port"
+	"github.com/fischor/kubetnl/pkg/portforward"
 )
 
 type TunnelOptions struct {

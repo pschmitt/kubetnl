@@ -3,10 +3,11 @@ package version
 import (
 	"fmt"
 
-	"github.com/fischor/kubetnl/internal/version"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/util/templates"
+
+	"github.com/fischor/kubetnl/pkg/version"
 )
 
 type VersionOptions struct {
