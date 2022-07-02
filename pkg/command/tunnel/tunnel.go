@@ -57,7 +57,13 @@ func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *c
 		Example: tunnelExample,
 		Run: func(cmd *cobra.Command, args []string) {
 			cmdutil.CheckErr(Complete(o, f, cmd, args))
-			err := o.Run(cmd.Context())
+
+			ctx, cancel := graceful.WithKill(cmd.Context())
+			defer cancel()
+			ctx, interruptCancel := graceful.WithInterrupt(ctx)
+			defer interruptCancel()
+		
+			err := o.Run(ctx)
 			if err != graceful.Interrupted {
 				cmdutil.CheckErr(err)
 			}

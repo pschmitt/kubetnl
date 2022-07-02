@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -19,9 +18,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	k8sportforward "k8s.io/client-go/tools/portforward"
 	watchtools "k8s.io/client-go/tools/watch"
-	"k8s.io/client-go/transport/spdy"
 	"k8s.io/klog/v2"
 
 	"github.com/fischor/kubetnl/pkg/graceful"
@@ -61,12 +58,7 @@ type TunnelOptions struct {
 	ClientSet  *kubernetes.Clientset
 }
 
-func (o *TunnelOptions) Run(parent context.Context) error {
-	ctx, cancel := graceful.WithKill(parent)
-	defer cancel()
-	interruptCtx, interruptCancel := graceful.WithInterrupt(ctx)
-	defer interruptCancel()
-
+func (o *TunnelOptions) Run(ctx context.Context) error {
 	// Create the service for incoming traffic within the cluster. The
 	// services accepts traffic on all ports that are in mentioned in
 	// o.PortMappings[*].ContainerPortNumber using the specied protocol.
@@ -91,7 +83,7 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 	})
 
 	select {
-	case <-interruptCtx.Done():
+	case <-ctx.Done():
 		return graceful.Interrupted
 	default:
 	}
@@ -124,7 +116,7 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 	})
 
 	select {
-	case <-interruptCtx.Done():
+	case <-ctx.Done():
 		return graceful.Interrupted
 	default:
 	}
@@ -137,7 +129,7 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error watching pod %s: %v", o.Name, err)
 	}
-	_, err = watchtools.UntilWithoutRetry(interruptCtx, podWatch, condPodReady)
+	_, err = watchtools.UntilWithoutRetry(ctx, podWatch, condPodReady)
 	if err != nil {
 		if err == watchtools.ErrWatchClosed {
 			return fmt.Errorf("error waiting for pod ready: podWatch has been closed before pod ready event received")
@@ -145,7 +137,7 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 		// err will be wait.ErrWatchClosed is the context passed to
 		// watchtools.UntilWithoutRetry is done. However, if the interrupt
 		// context was canceled, return an graceful.Interrupted.
-		if interruptCtx.Err() != nil {
+		if ctx.Err() != nil {
 			return graceful.Interrupted
 		}
 		if err == wait.ErrWaitTimeout {
@@ -183,14 +175,14 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 	err = wait.PollImmediateInfinite(time.Second, func() (bool, error) {
 		sshAttempts++
 		var err error
-		sshClient, err = sshDialContext(interruptCtx, "tcp", sshAddr, o.sshConfig())
+		sshClient, err = sshDialContext(ctx, "tcp", sshAddr, o.sshConfig())
 		if err != nil {
 			// HACK: net.DialContext does neither return nor wraps
 			// the context.Canceled error. Checking if the error
 			// was probably caused by a canceled context. See
 			// <https://github.com/golang/go/issues/36208>.
-			if interruptCtx.Err() != nil {
-				return false, interruptCtx.Err()
+			if ctx.Err() != nil {
+				return false, ctx.Err()
 			}
 			if sshAttempts > 3 {
 				fmt.Fprintf(o.Out, "failed to dial ssh: %v. Retrying...\n", err)
@@ -198,17 +190,17 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 			klog.V(1).Infof("error dialing ssh (%s): %v", sshAddr, err)
 		}
 		return err == nil, nil
-
 	})
 	if err != nil {
-		if err == interruptCtx.Err() {
+		if err == ctx.Err() {
 			klog.V(2).Info("Interrupted while establishing SSH connection")
 			return graceful.Interrupted
 		}
 		// Should not happen since we retry on all errors except for
-		// the interruptCtx.Err().
+		// the ctx.Err().
 		return fmt.Errorf("error dialing ssh: %v", err)
 	}
+	
 	klog.V(2).Infof("SSH connection (%s) ready", sshAddr)
 	defer graceful.Do(ctx, func() {
 		sshClient.Close()
@@ -259,7 +251,7 @@ func (o *TunnelOptions) Run(parent context.Context) error {
 					p.f.Close()
 				}
 			}
-		case <-interruptCtx.Done():
+		case <-ctx.Done():
 			for _, p := range pairs {
 				p.f.Close()
 			}
