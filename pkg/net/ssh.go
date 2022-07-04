@@ -6,9 +6,9 @@ import (
 	"github.com/fischor/kubetnl/pkg/port"
 )
 
-// ChooseSSHPort chooses the port number for the SSH server respecting the ports
+// GetFreeSSHPortInContainer chooses the port number for the SSH server respecting the ports
 // that are used for incoming traffic.
-func ChooseSSHPort(mm []port.Mapping) (int, error) {
+func GetFreeSSHPortInContainer(mm []port.Mapping) (int, error) {
 	if !isInUse(mm, 2222) {
 		return 2222, nil
 	}

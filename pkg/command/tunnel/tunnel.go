@@ -85,7 +85,7 @@ func Complete(o *tunnel.TunnelOptions, f cmdutil.Factory, cmd *cobra.Command, ar
 	if err != nil {
 		return err
 	}
-	o.RemoteSSHPort, err = net.ChooseSSHPort(o.PortMappings)
+	o.RemoteSSHPort, err = net.GetFreeSSHPortInContainer(o.PortMappings)
 	if err != nil {
 		return err
 	}
