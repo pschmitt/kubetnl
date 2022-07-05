@@ -26,6 +26,10 @@ type Forwarder struct {
 	lis *onceCloseListener
 }
 
+func (f *Forwarder) String() string {
+	return f.TargetAddr
+}
+
 // Open accepts incoming connections on l, creating a new service goroutine for
 // each. The service goroutines open a new connection to f.TargetAddr and
 // forward the data read from the incoming connection.

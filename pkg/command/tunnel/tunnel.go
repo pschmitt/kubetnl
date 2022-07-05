@@ -1,6 +1,8 @@
 package tunnel
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
@@ -44,7 +46,7 @@ var (
 )
 
 func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *cobra.Command {
-	o := &tunnel.TunnelOptions{
+	o := &tunnel.Tunnel{
 		IOStreams:    streams,
 		LocalSSHPort: 7154, // TODO: grab one randomly
 		Image:        "docker.io/fischor/kubetnl-server:0.1.0",
@@ -62,11 +64,17 @@ func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *c
 			defer cancel()
 			ctx, interruptCancel := graceful.WithInterrupt(ctx)
 			defer interruptCancel()
-		
-			err := o.Run(ctx)
-			if err != graceful.Interrupted {
+
+			readyChan, err := o.Run(ctx)
+			defer func() {
+				_ = o.Cleanup(context.Background())
+			}()
+			if err != nil {
 				cmdutil.CheckErr(err)
 			}
+
+			<-readyChan
+			<-ctx.Done()
 		},
 	}
 
@@ -75,7 +83,7 @@ func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *c
 	return cmd
 }
 
-func Complete(o *tunnel.TunnelOptions, f cmdutil.Factory, cmd *cobra.Command, args []string) error {
+func Complete(o *tunnel.Tunnel, f cmdutil.Factory, cmd *cobra.Command, args []string) error {
 	if len(args) < 2 {
 		return cmdutil.UsageErrorf(cmd, "SERVICE_NAME and list of TARGET_ADDR:SERVICE_PORT pairs are required for tunnel")
 	}

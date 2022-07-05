@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"time"
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
@@ -11,29 +13,28 @@ import (
 	k8sportforward "k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 	"k8s.io/klog/v2"
-
-	"github.com/fischor/kubetnl/pkg/graceful"
 )
 
+// KubeForwarder is a portforwarder for forwarding from a local port to a kubernetes Pod and port.
+// It is equivalent to "kubectl port-forward".
 type KubeForwarder struct {
-	PodName string
+	PodName      string
 	PodNamespace string
 
-	LocalPort int
+	LocalPort  int
 	RemotePort int
 
 	RESTConfig *rest.Config
 	ClientSet  *kubernetes.Clientset
 }
 
-func (o KubeForwarder) Run(ctx context.Context) error {
+func (o KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 	// Setup portforwarding to the pod.
-	pfwdReadyCh := make(chan struct{})   // Closed when portforwarding ready.
-	pfwdStopCh := make(chan struct{}, 1) // is never closed by k8sportforward
-	pfwdDoneCh := make(chan struct{})    // Closed when portforwarding exits.
+	readyCh := make(chan struct{})   // Closed when portforwarding ready.
+	stopCh := make(chan struct{}, 1) // is never closed by k8sportforward
 
 	go func() error {
-		// Do a portforwarding to the pods exposed SSH port.
+		klog.V(3).Infof("Starting port-forward from :%d --> %s/%s:%d: dialing...", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
 		req := o.ClientSet.CoreV1().RESTClient().Post().
 			Resource("pods").
 			Namespace(o.PodNamespace).
@@ -43,37 +44,53 @@ func (o KubeForwarder) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		
-		dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", req.URL())
+
+		dialer := spdy.NewDialer(
+			upgrader,
+			&http.Client{Transport: transport},
+			http.MethodPost,
+			req.URL())
+
 		pfwdPorts := []string{fmt.Sprintf("%d:%d", o.LocalPort, o.RemotePort)}
-		streams := genericclioptions.NewTestIOStreamsDiscard()
-		pfwd, err := k8sportforward.New(dialer, pfwdPorts, pfwdStopCh, pfwdReadyCh, streams.Out, streams.ErrOut)
-		if err != nil {
-			return err
-		}
-		err = pfwd.ForwardPorts() // blocks
-		if err != nil {
-			return fmt.Errorf("error port-forwarding from :%d --> %d: %v", o.LocalPort, o.RemotePort, err)
+
+		streams := genericclioptions.IOStreams{
+			In:     os.Stdin,
+			Out:    os.Stdout,
+			ErrOut: os.Stderr,
 		}
 
-		// If this errors, also everything following will error.
-		close(pfwdDoneCh)
-		return nil
+		// loop forever, until the context is canceled.
+		for {
+			select {
+			case <-time.After(500 * time.Millisecond):
+				pfwd, err := k8sportforward.New(dialer, pfwdPorts, stopCh, readyCh, streams.Out, streams.ErrOut)
+				if err != nil {
+					klog.V(3).Infof("error port-forwarding from :%d --> %d: %v", o.LocalPort, o.RemotePort, err)
+					continue
+				}
+
+				klog.V(3).Infof("Running port-forward from :%d --> %s/%s:%d in a goroutine...", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
+				err = pfwd.ForwardPorts() // blocks
+				if err != nil {
+					klog.V(3).Infof("error port-forwarding from :%d --> %d: %v", o.LocalPort, o.RemotePort, err)
+					continue
+				}
+
+				klog.V(3).Infof("Port-forward goroutine from :%d --> %s/%s:%d is done.", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
+				return nil
+
+			case <-ctx.Done():
+				return nil
+			}
+		}
 	}()
 
-	defer graceful.Do(ctx, func() {
-		close(pfwdStopCh)
-		<-pfwdDoneCh
-		klog.V(2).Infof("Cleanup: port-forwarding closed")
-	})
+	// start a goroutine to wait for the cancellation of the context
+	go func() {
+		<-ctx.Done()
+		klog.V(3).Infof("Context cancelled: stopping port-forward from :%d --> %s/%s:%d.", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
+		stopCh <- struct{}{}
+	}()
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-pfwdReadyCh:
-		// Note that having a ready pfwd just means that it is listening on LocalPort.
-		klog.V(2).Infof("Listening to portforward connections from :%d --> %d", o.LocalPort, o.RemotePort)
-	}
-
-	return nil
+	return readyCh, nil
 }

@@ -2,35 +2,19 @@ package tunnel
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"strconv"
-	"time"
 
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
+	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
-	watchtools "k8s.io/client-go/tools/watch"
 	"k8s.io/klog/v2"
 
-	"github.com/fischor/kubetnl/pkg/graceful"
 	"github.com/fischor/kubetnl/pkg/port"
 	"github.com/fischor/kubetnl/pkg/portforward"
 )
 
-var (
-	kubetnlPodContainerName = "main"
-)
-
-type TunnelOptions struct {
+type Tunnel struct {
 	genericclioptions.IOStreams
 
 	Namespace        string
@@ -56,329 +40,78 @@ type TunnelOptions struct {
 
 	RESTConfig *rest.Config
 	ClientSet  *kubernetes.Clientset
+
+	serviceAccount       *corev1.ServiceAccount
+	serviceAccountClient v1.ServiceAccountInterface
+	configMap            *corev1.ConfigMap
+	configMapClient      v1.ConfigMapInterface
+	service              *corev1.Service
+	serviceClient        v1.ServiceInterface
+	pod                  *corev1.Pod
+	podClient            v1.PodInterface
 }
 
-func (o *TunnelOptions) Run(ctx context.Context) error {
-	// Create the service for incoming traffic within the cluster. The
-	// services accepts traffic on all ports that are in mentioned in
-	// o.PortMappings[*].ContainerPortNumber using the specied protocol.
-	serviceClient := o.ClientSet.CoreV1().Services(o.Namespace)
-	svcPorts := servicePorts(o.PortMappings)
-	service := getService(o.Name, svcPorts)
-	klog.V(2).Infof("Creating service \"%s\"...", o.Name)
-	service, err := serviceClient.Create(ctx, service, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("error creating service: %v", err)
-	}
-	klog.V(3).Infof("Created service \"%s\".", service.GetObjectMeta().GetName())
-	defer graceful.Do(ctx, func() {
-		klog.V(2).Infof("Cleanup: deleting service %s ...", service.Name)
-		deletePolicy := metav1.DeletePropagationForeground
-		deleteOptions := metav1.DeleteOptions{PropagationPolicy: &deletePolicy}
-		err := serviceClient.Delete(ctx, service.Name, deleteOptions)
-		if err != nil {
-			klog.V(1).Info("Cleanup: error deleting service: %v", err)
-			fmt.Fprintf(o.ErrOut, "Failed to delete service %q. Use \"kubetnl cleanup\" to delete any leftover resources created by kubetnl.\n", o.Name)
-		}
-	})
+// Run starts the runnel from the kubernetes cluster to the defined list of port mappings.
+func (o *Tunnel) Run(ctx context.Context) (chan struct{}, error) {
+	readyCh := make(chan struct{}) // Closed when portforwarding ready.
 
-	select {
-	case <-ctx.Done():
-		return graceful.Interrupted
-	default:
+	if err := o.CreateService(ctx); err != nil {
+		return readyCh, err
 	}
 
-	// Create the service for incoming traffic within the cluster. The pod
-	// exposes all ports that are in mentioned in
-	// o.PortMappings[*].ContainerPortNumber using the specied protocol.
-	// Additionally it exposes the port for the ssh conn.
-	ports := append(containerPorts(o.PortMappings), corev1.ContainerPort{
-		Name:          "ssh",
-		ContainerPort: int32(o.RemoteSSHPort),
-	})
-	podClient := o.ClientSet.CoreV1().Pods(o.Namespace)
-	pod := getPod(o.Name, o.Image, o.RemoteSSHPort, ports)
-	klog.V(2).Infof("Creating pod \"%s\"...", o.Name)
-	pod, err = podClient.Create(ctx, pod, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("error creating pod: %v", err)
-	}
-	klog.V(3).Infof("Created pod \"%s\".", service.GetObjectMeta().GetName())
-	defer graceful.Do(ctx, func() {
-		klog.V(2).Infof("Cleanup: deleting pod %s ...", pod.Name)
-		deletePolicy := metav1.DeletePropagationForeground
-		deleteOptions := metav1.DeleteOptions{PropagationPolicy: &deletePolicy}
-		err := podClient.Delete(ctx, pod.Name, deleteOptions)
-		if err != nil {
-			klog.V(1).Infof("tunnel Cleanup: error deleting pod: %v. That pod probably still runs. You can use kubetnl cleanup to clean up all resources created by kubetnl.", err)
-			fmt.Fprintf(o.ErrOut, "Failed to delete pod %q. Use \"kubetnl cleanup\" to delete any leftover resources created by kubetnl.\n", o.Name)
-		}
-	})
-
-	select {
-	case <-ctx.Done():
-		return graceful.Interrupted
-	default:
+	if err := o.CreateConfigMap(ctx); err != nil {
+		return readyCh, err
 	}
 
-	// Wait for the pod to be ready before setting up a SSH connection.
-	watchOptions := metav1.ListOptions{}
-	watchOptions.FieldSelector = fields.OneTermEqualSelector("metadata.name", o.Name).String()
-	watchOptions.ResourceVersion = pod.GetResourceVersion()
-	podWatch, err := podClient.Watch(ctx, watchOptions)
-	if err != nil {
-		return fmt.Errorf("error watching pod %s: %v", o.Name, err)
+	if err := o.CreatePod(ctx); err != nil {
+		return readyCh, err
 	}
-	_, err = watchtools.UntilWithoutRetry(ctx, podWatch, condPodReady)
-	if err != nil {
-		if err == watchtools.ErrWatchClosed {
-			return fmt.Errorf("error waiting for pod ready: podWatch has been closed before pod ready event received")
-		}
-		// err will be wait.ErrWatchClosed is the context passed to
-		// watchtools.UntilWithoutRetry is done. However, if the interrupt
-		// context was canceled, return an graceful.Interrupted.
-		if ctx.Err() != nil {
-			return graceful.Interrupted
-		}
-		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("error waiting for pod ready: timed out after %d seconds", 300)
-		}
-		return fmt.Errorf("error waiting for pod ready: received unknown error \"%f\"", err)
-	}
-	klog.V(2).Infof("Pod ready..\n")
 
 	kf := portforward.KubeForwarder{
-		PodName: pod.Name,
-		PodNamespace: pod.Namespace,
-		LocalPort: o.LocalSSHPort,
-		RemotePort: o.RemoteSSHPort,
-		RESTConfig: o.RESTConfig,
-		ClientSet: o.ClientSet,
-	}
-	if err := kf.Run(ctx); err != nil {
-		return err
+		PodName:      o.pod.Name,
+		PodNamespace: o.pod.Namespace,
+		LocalPort:    o.LocalSSHPort,
+		RemotePort:   o.RemoteSSHPort,
+		RESTConfig:   o.RESTConfig,
+		ClientSet:    o.ClientSet,
 	}
 
-	// HACK: Also the pods is in a ready state, the openssh server may not
-	// yet accept any connections. Also we are retrying to establish the
-	// SSH connection on failure, the k8sportforward library will log the
-	// error. To avoid having that error appearing what might confuse user,
-	// just add 1.5 seconds of delay here.
-	// TODO(fischor): Get rid of that HACK somewhat.
-	<-time.After(1500 * time.Millisecond)
-
-	// Establish SSH connection over the forwarded port.
-	// Retry establishing the connection in case of failure every second.
-	sshAddr := fmt.Sprintf("localhost:%d", o.LocalSSHPort)
-	var sshClient *ssh.Client
-	sshAttempts := 0
-	err = wait.PollImmediateInfinite(time.Second, func() (bool, error) {
-		sshAttempts++
-		var err error
-		sshClient, err = sshDialContext(ctx, "tcp", sshAddr, o.sshConfig())
-		if err != nil {
-			// HACK: net.DialContext does neither return nor wraps
-			// the context.Canceled error. Checking if the error
-			// was probably caused by a canceled context. See
-			// <https://github.com/golang/go/issues/36208>.
-			if ctx.Err() != nil {
-				return false, ctx.Err()
-			}
-			if sshAttempts > 3 {
-				fmt.Fprintf(o.Out, "failed to dial ssh: %v. Retrying...\n", err)
-			}
-			klog.V(1).Infof("error dialing ssh (%s): %v", sshAddr, err)
-		}
-		return err == nil, nil
-	})
+	kfReady, err := kf.Run(ctx)
 	if err != nil {
-		if err == ctx.Err() {
-			klog.V(2).Info("Interrupted while establishing SSH connection")
-			return graceful.Interrupted
-		}
-		// Should not happen since we retry on all errors except for
-		// the ctx.Err().
-		return fmt.Errorf("error dialing ssh: %v", err)
-	}
-	
-	klog.V(2).Infof("SSH connection (%s) ready", sshAddr)
-	defer graceful.Do(ctx, func() {
-		sshClient.Close()
-		klog.V(2).Infof("Cleanup: ssh connection (%s) closed", sshAddr)
-	})
-
-	// Setup tunnels.
-	var pairs []forwarderWithListener
-	for _, m := range o.PortMappings {
-		// TODO: Check for interrupt and ctx.Done in every iteration.
-		// TODO Support remote ips: Note that it does not work without the 0.0.0.0 here.
-		target := m.TargetAddress()
-		remote := fmt.Sprintf("0.0.0.0:%d", m.ContainerPortNumber)
-		l, err := sshClient.Listen("tcp", remote)
-		if err != nil {
-			if !o.ContinueOnTunnelError {
-				// Close all created listeners.
-				for _, p := range pairs {
-					p.l.Close()
-				}
-				fmt.Fprintf(o.Out, "Failed to tunnel from %s.%s.svc.cluster.local:%d --> %s\n", o.Name, o.Namespace, m.ContainerPortNumber, target)
-				return fmt.Errorf("failed to listen on remote %s: %v", remote, err)
-			}
-			klog.Errorf("failed to listen on remote %s: %v. No tunnel created.", remote, err)
-		}
-		pairs = append(pairs, forwarderWithListener{
-			f: &portforward.Forwarder{TargetAddr: target},
-			l: l,
-		})
-		fmt.Fprintf(o.Out, "Tunneling from %s.%s.svc.cluster.local:%d --> %s\n", o.Name, o.Namespace, m.ContainerPortNumber, target)
+		return readyCh, err
 	}
 
-	// Open tunnels.
-	tErrg, tctx := errgroup.WithContext(ctx)
-	for _, pp := range pairs {
-		p := pp
-		tErrg.Go(func() error { return p.f.Open(p.l) })
+	klog.V(3).Infof("Waiting for SSH port-forward to be ready...")
+	select {
+	case <-kfReady:
+		klog.V(3).Infof("SSH port-forward is ready: starting SSH connection...")
+	case <-ctx.Done():
+		return readyCh, ctx.Err()
 	}
-	go func() {
-		select {
-		case <-tctx.Done():
-			// If tctx is done and tctx.Err is non-nil an error
-			// occured. Close the other tunnels if requested.
-			// Note that if ctx is done and and tctx.Err is nil,
-			// the Errgroup and thus the tunnels already exited.
-			if tctx.Err() != nil && !o.ContinueOnTunnelError {
-				for _, p := range pairs {
-					p.f.Close()
-				}
-			}
-		case <-ctx.Done():
-			for _, p := range pairs {
-				p.f.Close()
-			}
-		}
-	}()
-	_ = tErrg.Wait()
+
+	sshtunnel := NewSSHTunnel(o.LocalSSHPort, o.RemoteSSHPort, o.ContinueOnTunnelError)
+	if err := sshtunnel.Dial(ctx); err != nil {
+		return readyCh, err
+	}
+	if err := sshtunnel.RunPortMappings(ctx, o.PortMappings); err != nil {
+		return readyCh, err
+	}
+
+	// mark the tunnel as ready
+	close(readyCh)
 
 	// Note that, in case of a graceful shutdown the defer functions will
 	// close the SSH connection, close the portforwarding and cleanup the
 	// pod and services.
-	return nil
+	return readyCh, nil
 }
 
-func (o *TunnelOptions) sshConfig() *ssh.ClientConfig {
-	return &ssh.ClientConfig{
-		User: "user",
-		Auth: []ssh.AuthMethod{
-			ssh.Password("password"),
-		},
-		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-			// Accept all keys.
-			return nil
-		},
+func (o *Tunnel) Cleanup(ctx context.Context) error {
+	if err := o.CleanupService(ctx); err != nil {
+		return err
 	}
-}
-
-func sshDialContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
-	d := net.Dialer{Timeout: config.Timeout}
-	conn, err := d.DialContext(ctx, network, addr)
-	if err != nil {
-		return nil, err
+	if err := o.CleanupPod(ctx); err != nil {
+		return err
 	}
-	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
-	if err != nil {
-		return nil, err
-	}
-	return ssh.NewClient(c, chans, reqs), nil
-}
-
-type forwarderWithListener struct {
-	f *portforward.Forwarder
-	l net.Listener
-}
-
-func getPod(name, image string, sshPort int, ports []corev1.ContainerPort) *corev1.Pod {
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: map[string]string{
-				"io.github.kubetnl": name,
-			},
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{
-				Name:  kubetnlPodContainerName,
-				Image: image,
-				Ports: ports,
-				Env: []corev1.EnvVar{
-					{Name: "PORT", Value: strconv.Itoa(sshPort)},
-					{Name: "PASSWORD_ACCESS", Value: "true"},
-					{Name: "USER_NAME", Value: "user"},
-					{Name: "USER_PASSWORD", Value: "password"},
-				},
-			}},
-		},
-	}
-}
-
-func getService(name string, ports []corev1.ServicePort) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: map[string]string{
-				"io.github.kubetnl": name,
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{
-				"io.github.kubetnl": name,
-			},
-			Ports: ports,
-		},
-	}
-
-}
-
-func servicePorts(mappings []port.Mapping) []corev1.ServicePort {
-	var ports []corev1.ServicePort
-	for i, m := range mappings {
-		ports = append(ports, corev1.ServicePort{
-			Name:       fmt.Sprint(i),
-			Port:       int32(m.ContainerPortNumber),
-			TargetPort: intstr.FromInt(m.ContainerPortNumber),
-			Protocol:   protocolToCoreV1(m.Protocol),
-		})
-	}
-	return ports
-}
-
-func containerPorts(mappings []port.Mapping) []corev1.ContainerPort {
-	var ports []corev1.ContainerPort
-	for _, m := range mappings {
-		ports = append(ports, corev1.ContainerPort{
-			ContainerPort: int32(m.ContainerPortNumber),
-			Protocol:      protocolToCoreV1(m.Protocol),
-			// TODO: HostIP?
-		})
-	}
-	return ports
-}
-
-func protocolToCoreV1(p port.Protocol) corev1.Protocol {
-	if p == port.ProtocolSCTP {
-		return corev1.ProtocolSCTP
-	}
-	if p == port.ProtocolUDP {
-		return corev1.ProtocolUDP
-	}
-	return corev1.ProtocolTCP
-}
-
-func condPodReady(event watch.Event) (bool, error) {
-	pod := event.Object.(*corev1.Pod)
-	for _, cond := range pod.Status.Conditions {
-		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
-			return true, nil
-		}
-	}
-	return false, nil
+	return o.CleanupConfigMap(ctx)
 }
