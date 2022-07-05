@@ -49,7 +49,7 @@ func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *c
 	o := &tunnel.Tunnel{
 		IOStreams:    streams,
 		LocalSSHPort: 7154, // TODO: grab one randomly
-		Image:        "docker.io/fischor/kubetnl-server:0.1.0",
+		Image:        "ghcr.io/linuxserver/openssh-server:latest",
 	}
 
 	cmd := &cobra.Command{
