@@ -55,8 +55,8 @@ type Tunnel struct {
 	podClient            v1.PodInterface
 }
 
-func NewTunnel(cfg TunnelConfig) Tunnel {
-	return Tunnel{
+func NewTunnel(cfg TunnelConfig) *Tunnel {
+	return &Tunnel{
 		TunnelConfig: cfg,
 	}
 }
@@ -77,23 +77,21 @@ func (o *Tunnel) Run(ctx context.Context) (chan struct{}, error) {
 		return readyCh, err
 	}
 
-	kf := portforward.KubeForwarder{
+	kf := portforward.NewKubeForwarder(portforward.KubeForwarderConfig{
 		PodName:      o.pod.Name,
 		PodNamespace: o.pod.Namespace,
 		LocalPort:    o.LocalSSHPort,
 		RemotePort:   o.RemoteSSHPort,
 		RESTConfig:   o.RESTConfig,
 		ClientSet:    o.ClientSet,
-	}
-
-	kfReady, err := kf.Run(ctx)
-	if err != nil {
+	})
+	if _, err := kf.Run(ctx); err != nil {
 		return readyCh, err
 	}
 
 	klog.V(3).Infof("Waiting for SSH port-forward to be ready...")
 	select {
-	case <-kfReady:
+	case <-kf.Ready():
 		klog.V(3).Infof("SSH port-forward is ready: starting SSH connection...")
 	case <-ctx.Done():
 		return readyCh, ctx.Err()

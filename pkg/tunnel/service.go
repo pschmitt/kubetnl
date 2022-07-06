@@ -56,11 +56,13 @@ func (o *Tunnel) CleanupService(ctx context.Context) error {
 	deletePolicy := metav1.DeletePropagationForeground
 	deleteOptions := metav1.DeleteOptions{PropagationPolicy: &deletePolicy}
 
-	klog.V(2).Infof("Cleanup: deleting Service %s ...", o.service.Name)
-	err := o.serviceClient.Delete(ctx, o.service.Name, deleteOptions)
-	if err != nil {
-		klog.V(1).Info("Cleanup: error deleting Service: %v", err)
-		fmt.Fprintf(o.ErrOut, "Failed to delete service %q. Use \"kubetnl cleanup\" to delete any leftover resources created by kubetnl.\n", o.Name)
+	if o.service != nil {
+		klog.V(2).Infof("Cleanup: deleting Service %s ...", o.service.Name)
+		err := o.serviceClient.Delete(ctx, o.service.Name, deleteOptions)
+		if err != nil {
+			klog.V(1).Info("Cleanup: error deleting Service: %v", err)
+			fmt.Fprintf(o.ErrOut, "Failed to delete service %q. Use \"kubetnl cleanup\" to delete any leftover resources created by kubetnl.\n", o.Name)
+		}
 	}
 
 	return nil

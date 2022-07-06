@@ -4,25 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"os"
-	"strconv"
 	"testing"
 
 	"github.com/phayes/freeport"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
-	tnet "github.com/fischor/kubetnl/pkg/net"
-	"github.com/fischor/kubetnl/pkg/port"
+	"github.com/fischor/kubetnl/pkg/e2eutils"
 	"github.com/fischor/kubetnl/pkg/portforward"
-	"github.com/fischor/kubetnl/pkg/tunnel"
 )
 
 // WriteFunc is a function that implements the io.Writer interface.
@@ -67,15 +59,7 @@ func (w WriteFunc) Write(p []byte) (n int, err error) {
 func TestServiceInCluster(t *testing.T) {
 	exposeLocalService := features.New("expose local service").
 		Assess("expose local service", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			streams := genericclioptions.IOStreams{In: os.Stdin}
-			streams.Out = WriteFunc(func(p []byte) (n int, err error) {
-				klog.Infof("%s", p)
-				return len(p), nil
-			})
-			streams.ErrOut = WriteFunc(func(p []byte) (n int, err error) {
-				klog.Infof("ERROR: %s", p)
-				return len(p), nil
-			})
+			var err error
 
 			requestReceived := make(chan struct{}, 1)
 
@@ -91,68 +75,26 @@ func TestServiceInCluster(t *testing.T) {
 				klog.Info("Good! Request received in the local HTTP server.")
 			})
 
-			httpServer := httptest.NewServer(handler)
-			defer httpServer.Close()
-			klog.Infof("Local HTTP server started at %s", httpServer.URL)
-			u, err := url.Parse(httpServer.URL)
+			config := cfg.Client().RESTConfig()
+			cs, err := kubernetes.NewForConfig(config)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			listenerHost, listenerPortS, _ := net.SplitHostPort(u.Host)
-			listenerPort, err := strconv.Atoi(listenerPortS)
-			if err != nil {
-				t.Fatal(err)
-			}
+			kubeToHere := e2eutils.NewExposedHTTPServer(e2eutils.ExposedHTTPServerConfig{
+				Name:      "kube-8080",
+				Namespace: cfg.Namespace(),
+				Port:      8080,
+				Config:    config,
+			})
 
-			rest := cfg.Client().RESTConfig()
-			cs, err := kubernetes.NewForConfig(rest)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			kubeToHereConfig := tunnel.TunnelConfig{
-				Name:             "kube-8080",
-				IOStreams:        streams,
-				Image:            tunnel.DefaultTunnelImage,
-				Namespace:        cfg.Namespace(),
-				EnforceNamespace: true,
-				PortMappings: []port.Mapping{
-					{
-						TargetIP:            listenerHost,
-						TargetPortNumber:    listenerPort,
-						ContainerPortNumber: 8080,
-					},
-				},
-				ContinueOnTunnelError: true,
-				RESTConfig:            rest,
-				ClientSet:             cs,
-			}
-
-			kubeToHereConfig.LocalSSHPort, err = freeport.GetFreePort()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			kubeToHereConfig.RemoteSSHPort, err = tnet.GetFreeSSHPortInContainer(kubeToHereConfig.PortMappings)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			klog.Infof("Creating a tunnel kubernetes[%s:%d]->here:%d",
-				kubeToHereConfig.Name,
-				kubeToHereConfig.PortMappings[0].ContainerPortNumber,
-				kubeToHereConfig.PortMappings[0].TargetPortNumber)
-
-			kubeToHere := tunnel.NewTunnel(kubeToHereConfig)
-
-			hereToKube := portforward.KubeForwarder{
+			hereToKube := portforward.NewKubeForwarder(portforward.KubeForwarderConfig{
 				PodName:      kubeToHere.Name,
 				PodNamespace: cfg.Namespace(),
 				RemotePort:   8080,
-				RESTConfig:   rest,
+				RESTConfig:   config,
 				ClientSet:    cs,
-			}
+			})
 
 			hereToKube.LocalPort, err = freeport.GetFreePort()
 			if err != nil {
@@ -162,28 +104,25 @@ func TestServiceInCluster(t *testing.T) {
 			klog.Infof("Creating a tunnel from here:%d->kubernetes[%s:%d]",
 				hereToKube.LocalPort,
 				hereToKube.PodName,
-				kubeToHere.PortMappings[0].ContainerPortNumber)
+				8080)
 
 			klog.Info("Starting both the kube->here and here->kube tunnels")
 
 			klog.Infof("Starting kube->here tunnel...")
-			kubeToHereReady, err := kubeToHere.Run(ctx)
-			defer func() {
-				_ = kubeToHere.Cleanup(context.Background())
-			}()
-			if err != nil {
+			if _, err := kubeToHere.Run(ctx, handler); err != nil {
 				t.Fatal(err)
 			}
+			defer kubeToHere.Cleanup()
 
 			klog.Infof("Starting here->kube tunnel...")
-			hereToKubeReady, err := hereToKube.Run(ctx)
-			if err != nil {
+			if _, err = hereToKube.Run(ctx); err != nil {
 				t.Fatal(err)
 			}
+			defer hereToKube.Cleanup()
 
 			klog.Infof("Waiting until everything is ready for starting tests...")
-			<-kubeToHereReady
-			<-hereToKubeReady
+			<-kubeToHere.Ready()
+			<-hereToKube.Ready()
 
 			klog.Infof("Everything ready: starting tests")
 			addr := fmt.Sprintf("http://127.0.0.1:%d/", hereToKube.LocalPort)

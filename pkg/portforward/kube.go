@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -17,7 +18,7 @@ import (
 
 // KubeForwarder is a portforwarder for forwarding from a local port to a kubernetes Pod and port.
 // It is equivalent to "kubectl port-forward".
-type KubeForwarder struct {
+type KubeForwarderConfig struct {
 	PodName      string
 	PodNamespace string
 
@@ -28,11 +29,22 @@ type KubeForwarder struct {
 	ClientSet  *kubernetes.Clientset
 }
 
-func (o KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
-	// Setup portforwarding to the pod.
-	readyCh := make(chan struct{})   // Closed when portforwarding ready.
-	stopCh := make(chan struct{}, 1) // is never closed by k8sportforward
+type KubeForwarder struct {
+	KubeForwarderConfig
+	readyCh     chan struct{}
+	stopCh      chan struct{}
+	stopChClose sync.Once
+}
 
+func NewKubeForwarder(cfg KubeForwarderConfig) *KubeForwarder {
+	return &KubeForwarder{
+		KubeForwarderConfig: cfg,
+		readyCh:             make(chan struct{}),    // Closed when portforwarding ready.
+		stopCh:              make(chan struct{}, 1), // is never closed by k8sportforward
+	}
+}
+
+func (o *KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 	go func() error {
 		klog.V(3).Infof("Starting port-forward from :%d --> %s/%s:%d: dialing...", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
 		req := o.ClientSet.CoreV1().RESTClient().Post().
@@ -63,7 +75,7 @@ func (o KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 		for {
 			select {
 			case <-time.After(500 * time.Millisecond):
-				pfwd, err := k8sportforward.New(dialer, pfwdPorts, stopCh, readyCh, streams.Out, streams.ErrOut)
+				pfwd, err := k8sportforward.New(dialer, pfwdPorts, o.stopCh, o.readyCh, streams.Out, streams.ErrOut)
 				if err != nil {
 					klog.V(3).Infof("error port-forwarding from :%d --> %d: %v", o.LocalPort, o.RemotePort, err)
 					continue
@@ -89,8 +101,20 @@ func (o KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 	go func() {
 		<-ctx.Done()
 		klog.V(3).Infof("Context cancelled: stopping port-forward from :%d --> %s/%s:%d.", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
-		stopCh <- struct{}{}
+		o.Cleanup()
 	}()
 
-	return readyCh, nil
+	return o.readyCh, nil
+}
+
+func (o *KubeForwarder) Ready() <-chan struct{} {
+	return o.readyCh
+}
+
+func (o *KubeForwarder) Cleanup() error {
+	// Make sure we only close the stopCh once.
+	o.stopChClose.Do(func() {
+		close(o.stopCh)
+	})
+	return nil
 }

@@ -157,16 +157,20 @@ func (o *Tunnel) CleanupPod(ctx context.Context) error {
 	deletePolicy := metav1.DeletePropagationForeground
 	deleteOptions := metav1.DeleteOptions{PropagationPolicy: &deletePolicy}
 
-	klog.V(2).Infof("Cleanup: deleting pod %s ...", o.pod.Name)
-	if err := o.podClient.Delete(ctx, o.pod.Name, deleteOptions); err != nil {
-		klog.V(1).Infof("Cleanup: error deleting Pod: %v. That pod probably still runs. You can use kubetnl cleanup to clean up all resources created by kubetnl.", err)
-		fmt.Fprintf(o.ErrOut, "Failed to delete Pod %q. Use \"kubetnl cleanup\" to delete any leftover resources created by kubetnl.\n", o.Name)
+	if o.pod != nil {
+		klog.V(2).Infof("Cleanup: deleting pod %s ...", o.pod.Name)
+		if err := o.podClient.Delete(ctx, o.pod.Name, deleteOptions); err != nil {
+			klog.V(1).Infof("Cleanup: error deleting Pod: %v. That pod probably still runs. You can use kubetnl cleanup to clean up all resources created by kubetnl.", err)
+			fmt.Fprintf(o.ErrOut, "Failed to delete Pod %q. Use \"kubetnl cleanup\" to delete any leftover resources created by kubetnl.\n", o.Name)
+		}
 	}
 
-	klog.V(2).Infof("Cleanup: deleting service account %s ...", o.serviceAccount.Name)
-	if err := o.serviceAccountClient.Delete(ctx, o.serviceAccount.Name, deleteOptions); err != nil {
-		klog.V(1).Infof("Cleanup: error deleting ServiceAccount : %v. You can use kubetnl cleanup to clean up all resources created by kubetnl.", err)
-		fmt.Fprintf(o.ErrOut, "Failed to delete ServiceAccount %q. Use \"kubetnl cleanup\" to delete any leftover resources created by kubetnl.\n", o.serviceAccount.Name)
+	if o.serviceAccount != nil {
+		klog.V(2).Infof("Cleanup: deleting service account %s ...", o.serviceAccount.Name)
+		if err := o.serviceAccountClient.Delete(ctx, o.serviceAccount.Name, deleteOptions); err != nil {
+			klog.V(1).Infof("Cleanup: error deleting ServiceAccount : %v. You can use kubetnl cleanup to clean up all resources created by kubetnl.", err)
+			fmt.Fprintf(o.ErrOut, "Failed to delete ServiceAccount %q. Use \"kubetnl cleanup\" to delete any leftover resources created by kubetnl.\n", o.serviceAccount.Name)
+		}
 	}
 
 	return nil
