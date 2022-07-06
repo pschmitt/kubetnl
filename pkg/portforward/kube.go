@@ -100,8 +100,8 @@ func (o *KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 	// start a goroutine to wait for the cancellation of the context
 	go func() {
 		<-ctx.Done()
-		klog.V(3).Infof("Context cancelled: stopping port-forward from :%d --> %s/%s:%d.", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
-		o.Cleanup()
+		klog.V(3).Infof("Context cancelled: stopping port-forward...")
+		o.Stop()
 	}()
 
 	return o.readyCh, nil
@@ -111,9 +111,10 @@ func (o *KubeForwarder) Ready() <-chan struct{} {
 	return o.readyCh
 }
 
-func (o *KubeForwarder) Cleanup() error {
+func (o *KubeForwarder) Stop() error {
 	// Make sure we only close the stopCh once.
 	o.stopChClose.Do(func() {
+		klog.V(3).Infof("Stopping port-forward from :%d --> %s/%s:%d.", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
 		close(o.stopCh)
 	})
 	return nil

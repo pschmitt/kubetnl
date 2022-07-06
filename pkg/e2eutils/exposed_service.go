@@ -142,12 +142,14 @@ func (e *ExposedHTTPServer) Ready() <-chan struct{} {
 	return e.kubeToHereReady
 }
 
-func (e *ExposedHTTPServer) Cleanup() error {
+func (e *ExposedHTTPServer) Stop() error {
 	if e.tun != nil {
-		_ = e.tun.Cleanup(context.Background())
+		klog.Infof("Stopping tunnel kubernetes[%s:%d]->%s...", e.Name, e.Port, e.httpServer.Listener.Addr())
+		_ = e.tun.Stop(context.Background())
 	}
 
 	if e.httpServer != nil {
+		klog.V(3).Infof("Stopping HTTP server...")
 		e.httpServer.Close()
 	}
 

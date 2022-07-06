@@ -73,15 +73,12 @@ func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *c
 			ctx, interruptCancel := graceful.WithInterrupt(ctx)
 			defer interruptCancel()
 
-			readyChan, err := tun.Run(ctx)
-			defer func() {
-				_ = tun.Cleanup(context.Background())
-			}()
-			if err != nil {
+			if _, err := tun.Run(ctx); err != nil {
 				cmdutil.CheckErr(err)
 			}
+			defer tun.Stop(context.Background())
 
-			<-readyChan
+			<-tun.Ready()
 			<-ctx.Done()
 		},
 	}

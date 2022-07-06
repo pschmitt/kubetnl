@@ -112,13 +112,13 @@ func TestServiceInCluster(t *testing.T) {
 			if _, err := kubeToHere.Run(ctx, handler); err != nil {
 				t.Fatal(err)
 			}
-			defer kubeToHere.Cleanup()
+			defer kubeToHere.Stop()
 
 			klog.Infof("Starting here->kube tunnel...")
 			if _, err = hereToKube.Run(ctx); err != nil {
 				t.Fatal(err)
 			}
-			defer hereToKube.Cleanup()
+			defer hereToKube.Stop()
 
 			klog.Infof("Waiting until everything is ready for starting tests...")
 			<-kubeToHere.Ready()

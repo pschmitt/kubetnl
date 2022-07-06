@@ -45,6 +45,7 @@ type TunnelConfig struct {
 type Tunnel struct {
 	TunnelConfig
 
+	readyCh              chan struct{}
 	serviceAccount       *corev1.ServiceAccount
 	serviceAccountClient v1.ServiceAccountInterface
 	configMap            *corev1.ConfigMap
@@ -58,23 +59,22 @@ type Tunnel struct {
 func NewTunnel(cfg TunnelConfig) *Tunnel {
 	return &Tunnel{
 		TunnelConfig: cfg,
+		readyCh:      make(chan struct{}), // Closed when portforwarding ready.
 	}
 }
 
 // Run starts the runnel from the kubernetes cluster to the defined list of port mappings.
 func (o *Tunnel) Run(ctx context.Context) (chan struct{}, error) {
-	readyCh := make(chan struct{}) // Closed when portforwarding ready.
-
 	if err := o.CreateService(ctx); err != nil {
-		return readyCh, err
+		return nil, err
 	}
 
 	if err := o.CreateConfigMap(ctx); err != nil {
-		return readyCh, err
+		return nil, err
 	}
 
 	if err := o.CreatePod(ctx); err != nil {
-		return readyCh, err
+		return nil, err
 	}
 
 	kf := portforward.NewKubeForwarder(portforward.KubeForwarderConfig{
@@ -86,7 +86,7 @@ func (o *Tunnel) Run(ctx context.Context) (chan struct{}, error) {
 		ClientSet:    o.ClientSet,
 	})
 	if _, err := kf.Run(ctx); err != nil {
-		return readyCh, err
+		return nil, err
 	}
 
 	klog.V(3).Infof("Waiting for SSH port-forward to be ready...")
@@ -94,27 +94,33 @@ func (o *Tunnel) Run(ctx context.Context) (chan struct{}, error) {
 	case <-kf.Ready():
 		klog.V(3).Infof("SSH port-forward is ready: starting SSH connection...")
 	case <-ctx.Done():
-		return readyCh, ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	sshtunnel := NewSSHTunnel(o.LocalSSHPort, o.RemoteSSHPort, o.ContinueOnTunnelError)
 	if err := sshtunnel.Dial(ctx); err != nil {
-		return readyCh, err
+		return nil, err
 	}
 	if err := sshtunnel.RunPortMappings(ctx, o.PortMappings); err != nil {
-		return readyCh, err
+		return nil, err
 	}
 
 	// mark the tunnel as ready
-	close(readyCh)
+	close(o.readyCh)
 
 	// Note that, in case of a graceful shutdown the defer functions will
 	// close the SSH connection, close the portforwarding and cleanup the
 	// pod and services.
-	return readyCh, nil
+	return o.readyCh, nil
 }
 
-func (o *Tunnel) Cleanup(ctx context.Context) error {
+func (o *Tunnel) Ready() <-chan struct{} {
+	return o.readyCh
+}
+
+func (o *Tunnel) Stop(ctx context.Context) error {
+	klog.V(3).Infof("Cleanning up resources in the kubernetes cluster...")
+
 	if err := o.CleanupService(ctx); err != nil {
 		return err
 	}
