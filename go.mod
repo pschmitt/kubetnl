@@ -18,4 +18,4 @@ require (
 	sigs.k8s.io/e2e-framework v0.0.7
 )
 
-replace github.com/fischor/kubetnl => /Users/alvaro/Development/kubetnl
+replace github.com/fischor/kubetnl => ./
