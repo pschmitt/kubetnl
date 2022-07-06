@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 
 	// NOTE: we should use some unique cluster name in Jenkins...
 	clusterName := "kubernetes-e2e-utils-tests"
-	if cn := os.Getenv("KE2E_CLUSTER_NAME"); cn!= "" {
+	if cn := os.Getenv("KE2E_CLUSTER_NAME"); cn != "" {
 		clusterName = cn
 	}
 

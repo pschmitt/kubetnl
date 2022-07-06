@@ -3,6 +3,7 @@ package tunnel
 import (
 	"context"
 
+	"github.com/phayes/freeport"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
@@ -46,10 +47,15 @@ var (
 )
 
 func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *cobra.Command {
-	o := &tunnel.Tunnel{
+	localSSHPort, err := freeport.GetFreePort()
+	if err != nil {
+		cmdutil.CheckErr(err)
+	}
+
+	tunnelConfig := tunnel.TunnelConfig{
 		IOStreams:    streams,
-		LocalSSHPort: 7154, // TODO: grab one randomly
-		Image:        "ghcr.io/linuxserver/openssh-server:latest",
+		LocalSSHPort: localSSHPort,
+		Image:        tunnel.DefaultTunnelImage,
 	}
 
 	cmd := &cobra.Command{
@@ -58,16 +64,18 @@ func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *c
 		Long:    tunnelLong,
 		Example: tunnelExample,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmdutil.CheckErr(Complete(o, f, cmd, args))
+			cmdutil.CheckErr(Complete(&tunnelConfig, f, cmd, args))
+
+			tun := tunnel.NewTunnel(tunnelConfig)
 
 			ctx, cancel := graceful.WithKill(cmd.Context())
 			defer cancel()
 			ctx, interruptCancel := graceful.WithInterrupt(ctx)
 			defer interruptCancel()
 
-			readyChan, err := o.Run(ctx)
+			readyChan, err := tun.Run(ctx)
 			defer func() {
-				_ = o.Cleanup(context.Background())
+				_ = tun.Cleanup(context.Background())
 			}()
 			if err != nil {
 				cmdutil.CheckErr(err)
@@ -78,12 +86,12 @@ func NewTunnelCommand(f cmdutil.Factory, streams genericclioptions.IOStreams) *c
 		},
 	}
 
-	cmd.Flags().StringVar(&o.Image, "image", o.Image, "The container image thats get deployed to serve a SSH server")
+	cmd.Flags().StringVar(&tunnelConfig.Image, "image", tunnelConfig.Image, "The container image thats get deployed to serve a SSH server")
 
 	return cmd
 }
 
-func Complete(o *tunnel.Tunnel, f cmdutil.Factory, cmd *cobra.Command, args []string) error {
+func Complete(o *tunnel.TunnelConfig, f cmdutil.Factory, cmd *cobra.Command, args []string) error {
 	if len(args) < 2 {
 		return cmdutil.UsageErrorf(cmd, "SERVICE_NAME and list of TARGET_ADDR:SERVICE_PORT pairs are required for tunnel")
 	}

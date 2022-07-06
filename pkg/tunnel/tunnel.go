@@ -14,7 +14,7 @@ import (
 	"github.com/fischor/kubetnl/pkg/portforward"
 )
 
-type Tunnel struct {
+type TunnelConfig struct {
 	genericclioptions.IOStreams
 
 	Namespace        string
@@ -40,6 +40,10 @@ type Tunnel struct {
 
 	RESTConfig *rest.Config
 	ClientSet  *kubernetes.Clientset
+}
+
+type Tunnel struct {
+	TunnelConfig
 
 	serviceAccount       *corev1.ServiceAccount
 	serviceAccountClient v1.ServiceAccountInterface
@@ -49,6 +53,12 @@ type Tunnel struct {
 	serviceClient        v1.ServiceInterface
 	pod                  *corev1.Pod
 	podClient            v1.PodInterface
+}
+
+func NewTunnel(cfg TunnelConfig) Tunnel {
+	return Tunnel{
+		TunnelConfig: cfg,
+	}
 }
 
 // Run starts the runnel from the kubernetes cluster to the defined list of port mappings.

@@ -25,10 +25,6 @@ import (
 	"github.com/fischor/kubetnl/pkg/tunnel"
 )
 
-const (
-	kubetnlImage = "ghcr.io/linuxserver/openssh-server:latest"
-)
-
 // WriteFunc is a function that implements the io.Writer interface.
 type WriteFunc func(p []byte) (n int, err error)
 
@@ -115,10 +111,10 @@ func TestServiceInCluster(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			kubeToHere := tunnel.Tunnel{
+			kubeToHereConfig := tunnel.TunnelConfig{
 				Name:             "kube-8080",
 				IOStreams:        streams,
-				Image:            kubetnlImage,
+				Image:            tunnel.DefaultTunnelImage,
 				Namespace:        cfg.Namespace(),
 				EnforceNamespace: true,
 				PortMappings: []port.Mapping{
@@ -133,20 +129,22 @@ func TestServiceInCluster(t *testing.T) {
 				ClientSet:             cs,
 			}
 
-			kubeToHere.LocalSSHPort, err = freeport.GetFreePort()
+			kubeToHereConfig.LocalSSHPort, err = freeport.GetFreePort()
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			kubeToHere.RemoteSSHPort, err = tnet.GetFreeSSHPortInContainer(kubeToHere.PortMappings)
+			kubeToHereConfig.RemoteSSHPort, err = tnet.GetFreeSSHPortInContainer(kubeToHereConfig.PortMappings)
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			klog.Infof("Creating a tunnel kubernetes[%s:%d]->here:%d",
-				kubeToHere.Name,
-				kubeToHere.PortMappings[0].ContainerPortNumber,
-				kubeToHere.PortMappings[0].TargetPortNumber)
+				kubeToHereConfig.Name,
+				kubeToHereConfig.PortMappings[0].ContainerPortNumber,
+				kubeToHereConfig.PortMappings[0].TargetPortNumber)
+
+			kubeToHere := tunnel.NewTunnel(kubeToHereConfig)
 
 			hereToKube := portforward.KubeForwarder{
 				PodName:      kubeToHere.Name,
