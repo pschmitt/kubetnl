@@ -1,4 +1,4 @@
-module github.com/fischor/kubetnl
+module github.com/inercia/kubetnl
 
 go 1.16
 
@@ -17,5 +17,3 @@ require (
 	k8s.io/kubectl v0.23.0
 	sigs.k8s.io/e2e-framework v0.0.7
 )
-
-replace github.com/fischor/kubetnl => ./

@@ -11,10 +11,10 @@ import (
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
 
-	"github.com/fischor/kubetnl/pkg/command/cleanup"
-	"github.com/fischor/kubetnl/pkg/command/options"
-	"github.com/fischor/kubetnl/pkg/command/tunnel"
-	"github.com/fischor/kubetnl/pkg/command/version"
+	"github.com/inercia/kubetnl/pkg/command/cleanup"
+	"github.com/inercia/kubetnl/pkg/command/options"
+	"github.com/inercia/kubetnl/pkg/command/tunnel"
+	"github.com/inercia/kubetnl/pkg/command/version"
 )
 
 var (
@@ -23,7 +23,7 @@ var (
 	kubetnlLong = templates.LongDesc(`
                 kubetnl tunnels TCP connections from within a Kubernetes cluster to an external endpoint.
 
-                Find more information and check out the souce code at: https://github.com/fischor/kubetnl`)
+                Find more information and check out the souce code at: https://github.com/inercia/kubetnl`)
 )
 
 func NewKubetnlCommand(in io.Reader, out, err io.Writer) *cobra.Command {

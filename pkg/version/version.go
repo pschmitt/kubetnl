@@ -28,7 +28,7 @@ type Info struct {
 func Get() Info {
 	comm := gitCommit
 	// HACK: Check if the build happens neither via a go build
-	// github.com/fischor/kubetnl or go install github.com/fischor/kubentl
+	// github.com/inercia/kubetnl or go install github.com/fischor/kubentl
 	// nor with provided ldflags.
 	chars := strings.Split(gitCommit, "")
 	if len(chars) == 11 && chars[0] == "$" && chars[10] == "$" {

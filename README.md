@@ -24,7 +24,7 @@ From the kubetnl binary, the connections are then forwarded to their specified t
 If you have Go installed, you can simply run
 
 ```
-go install github.com/fischor/kubetnl@latest
+go install github.com/inercia/kubetnl@latest
 ```
 
 to install the latest version of kubetnl. 
@@ -32,7 +32,7 @@ You can replace latest with the version tag you want to install, e.g. `v0.1.1`.
 
 ### Install by picking a relase
 
-Go the the [release section](https://github.com/fischor/kubetnl/releases) and pick the binary for your operation system and architecture and add it to your PATH.
+Go the the [release section](https://github.com/inercia/kubetnl/releases) and pick the binary for your operation system and architecture and add it to your PATH.
 
 ## Prerequisities
 
@@ -48,7 +48,7 @@ Your cluster must also be able to pull the docker.io/fischor/kubetnl-server imag
 $ kubetnl --help
 kubetnl tunnels TCP connections from within a Kubernetes cluster to an external endpoint.
 
- Find more information and check out the souce code at: https://github.com/fischor/kubetnl
+ Find more information and check out the souce code at: https://github.com/inercia/kubetnl
 
 Basic commands
   tunnel      Setup a new tunnel

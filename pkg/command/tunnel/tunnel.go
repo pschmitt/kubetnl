@@ -9,10 +9,10 @@ import (
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
 
-	"github.com/fischor/kubetnl/pkg/graceful"
-	"github.com/fischor/kubetnl/pkg/net"
-	"github.com/fischor/kubetnl/pkg/port"
-	"github.com/fischor/kubetnl/pkg/tunnel"
+	"github.com/inercia/kubetnl/pkg/graceful"
+	"github.com/inercia/kubetnl/pkg/net"
+	"github.com/inercia/kubetnl/pkg/port"
+	"github.com/inercia/kubetnl/pkg/tunnel"
 )
 
 var (

@@ -7,7 +7,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/util/templates"
 
-	"github.com/fischor/kubetnl/pkg/version"
+	"github.com/inercia/kubetnl/pkg/version"
 )
 
 type VersionOptions struct {

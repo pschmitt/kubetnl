@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/fischor/kubetnl/pkg/command"
+	"github.com/inercia/kubetnl/pkg/command"
 )
 
 func main() {

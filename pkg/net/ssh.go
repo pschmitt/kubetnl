@@ -3,7 +3,7 @@ package net
 import (
 	"fmt"
 
-	"github.com/fischor/kubetnl/pkg/port"
+	"github.com/inercia/kubetnl/pkg/port"
 )
 
 // GetFreeSSHPortInContainer chooses the port number for the SSH server respecting the ports

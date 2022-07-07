@@ -13,8 +13,8 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
-	"github.com/fischor/kubetnl/pkg/e2eutils"
-	"github.com/fischor/kubetnl/pkg/portforward"
+	"github.com/inercia/kubetnl/pkg/e2eutils"
+	"github.com/inercia/kubetnl/pkg/portforward"
 )
 
 // WriteFunc is a function that implements the io.Writer interface.
