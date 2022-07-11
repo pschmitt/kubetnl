@@ -85,6 +85,12 @@ func (o *KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 			ErrOut: os.Stderr,
 		}
 
+		klog.V(3).Infof("Waiting until %s/%s is ready for establishing port-forward...", o.PodNamespace, o.PodName)
+		if err := WaitPodReady(ctx, o.RESTConfig, o.PodNamespace, o.PodName); err != nil {
+			return err
+		}
+		klog.V(3).Infof("... %s/%s seems to be ready.", o.PodNamespace, o.PodName)
+
 		// loop forever, until the context is canceled.
 	loop:
 		for {
@@ -114,6 +120,9 @@ func (o *KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 					break loop
 				}
 				klog.V(3).Infof("Port-forward from :%d --> %s/%s:%d interrupted: retrying...", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
+				o.readyCh = make(chan struct{})
+				o.doneCh = make(chan struct{})
+				o.stopCh = make(chan struct{}, 1)
 
 			case <-ctx.Done():
 				break loop
