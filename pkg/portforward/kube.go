@@ -31,8 +31,12 @@ type KubeForwarderConfig struct {
 }
 
 type KubeForwarder struct {
+	sync.Mutex
+
 	KubeForwarderConfig
 	readyCh     chan struct{}
+	doneCh      chan struct{}
+	shouldStop  bool
 	stopCh      chan struct{}
 	stopChClose sync.Once
 }
@@ -49,6 +53,7 @@ func NewKubeForwarder(cfg KubeForwarderConfig) (*KubeForwarder, error) {
 	return &KubeForwarder{
 		KubeForwarderConfig: cfg,
 		readyCh:             make(chan struct{}),    // Closed when portforwarding ready.
+		doneCh:              make(chan struct{}),    // Closed when portforwarding is done.
 		stopCh:              make(chan struct{}, 1), // is never closed by k8sportforward
 	}, nil
 }
@@ -81,6 +86,7 @@ func (o *KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 		}
 
 		// loop forever, until the context is canceled.
+	loop:
 		for {
 			select {
 			case <-time.After(500 * time.Millisecond):
@@ -97,23 +103,40 @@ func (o *KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
 					continue
 				}
 
-				klog.V(3).Infof("Port-forward goroutine from :%d --> %s/%s:%d is done.", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
-				return nil
+				o.Lock()
+				shouldStop := o.shouldStop
+				o.Unlock()
+
+				// check if we are quitting because someone called Stop() or because the port-forward was broken
+				// in the last case, loop again
+				if shouldStop {
+					klog.V(3).Infof("Port-forward from :%d --> %s/%s:%d is done.", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
+					break loop
+				}
+				klog.V(3).Infof("Port-forward from :%d --> %s/%s:%d interrupted: retrying...", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
 
 			case <-ctx.Done():
-				return nil
+				break loop
 			}
 		}
+
+		close(o.doneCh)
+		return nil
 	}()
 
 	// start a goroutine to wait for the cancellation of the context
 	go func() {
 		<-ctx.Done()
-		klog.V(3).Infof("Context cancelled: stopping port-forward...")
+		klog.V(3).Infof("Context cancelled: stopping port-forward :%d --> %s/%s:%d.",
+			o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
 		o.Stop()
 	}()
 
 	return o.readyCh, nil
+}
+
+func (o *KubeForwarder) Done() <-chan struct{} {
+	return o.doneCh
 }
 
 func (o *KubeForwarder) Ready() <-chan struct{} {
@@ -124,6 +147,11 @@ func (o *KubeForwarder) Stop() error {
 	// Make sure we only close the stopCh once.
 	o.stopChClose.Do(func() {
 		klog.V(3).Infof("Stopping port-forward from :%d --> %s/%s:%d.", o.LocalPort, o.PodNamespace, o.PodName, o.RemotePort)
+
+		o.Lock()
+		o.shouldStop = true
+		o.Unlock()
+
 		close(o.stopCh)
 	})
 	return nil

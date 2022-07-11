@@ -60,6 +60,9 @@ func TestServiceInCluster(t *testing.T) {
 		Assess("expose local service", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			var err error
 
+			origContext := ctx
+			ctx, cancelContext := context.WithCancel(ctx)
+
 			requestReceived := make(chan struct{}, 1)
 
 			klog.Info("Creating a local HTTP server...")
@@ -141,11 +144,14 @@ func TestServiceInCluster(t *testing.T) {
 			select {
 			case <-requestReceived:
 				klog.Info("Test passed SUCCESSFULLY: received the request and the reponse.")
+				cancelContext()
+			case <-hereToKube.Done():
+				cancelContext()
 			case <-ctx.Done():
 				t.Fatal("Test FAILED: context was canceled")
 			}
 
-			return ctx
+			return origContext
 		}).Feature()
 
 	// test feature
