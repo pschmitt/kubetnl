@@ -77,7 +77,7 @@ func (o *Tunnel) Run(ctx context.Context) (chan struct{}, error) {
 		return nil, err
 	}
 
-	kf := portforward.NewKubeForwarder(portforward.KubeForwarderConfig{
+	kf, err := portforward.NewKubeForwarder(portforward.KubeForwarderConfig{
 		PodName:      o.pod.Name,
 		PodNamespace: o.pod.Namespace,
 		LocalPort:    o.LocalSSHPort,
@@ -85,6 +85,9 @@ func (o *Tunnel) Run(ctx context.Context) (chan struct{}, error) {
 		RESTConfig:   o.RESTConfig,
 		ClientSet:    o.ClientSet,
 	})
+	if err != nil {
+		return nil, err
+	}
 	if _, err := kf.Run(ctx); err != nil {
 		return nil, err
 	}

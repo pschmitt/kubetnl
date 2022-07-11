@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/phayes/freeport"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
@@ -88,15 +87,13 @@ func TestServiceInCluster(t *testing.T) {
 				Config:    config,
 			})
 
-			hereToKube := portforward.NewKubeForwarder(portforward.KubeForwarderConfig{
+			hereToKube, err := portforward.NewKubeForwarder(portforward.KubeForwarderConfig{
 				PodName:      kubeToHere.Name,
 				PodNamespace: cfg.Namespace(),
 				RemotePort:   8080,
 				RESTConfig:   config,
 				ClientSet:    cs,
 			})
-
-			hereToKube.LocalPort, err = freeport.GetFreePort()
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/phayes/freeport"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -36,12 +37,20 @@ type KubeForwarder struct {
 	stopChClose sync.Once
 }
 
-func NewKubeForwarder(cfg KubeForwarderConfig) *KubeForwarder {
+func NewKubeForwarder(cfg KubeForwarderConfig) (*KubeForwarder, error) {
+	var err error
+	if cfg.LocalPort == 0 {
+		cfg.LocalPort, err = freeport.GetFreePort()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &KubeForwarder{
 		KubeForwarderConfig: cfg,
 		readyCh:             make(chan struct{}),    // Closed when portforwarding ready.
 		stopCh:              make(chan struct{}, 1), // is never closed by k8sportforward
-	}
+	}, nil
 }
 
 func (o *KubeForwarder) Run(ctx context.Context) (chan struct{}, error) {
