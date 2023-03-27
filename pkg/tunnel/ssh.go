@@ -11,9 +11,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
-	"github.com/inercia/kubetnl/pkg/graceful"
-	"github.com/inercia/kubetnl/pkg/port"
-	"github.com/inercia/kubetnl/pkg/portforward"
+	"github.com/pschmitt/kubetnl/pkg/graceful"
+	"github.com/pschmitt/kubetnl/pkg/port"
+	"github.com/pschmitt/kubetnl/pkg/portforward"
 )
 
 type SSHTunnelForwarderWithListener struct {

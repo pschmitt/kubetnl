@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog/v2"
 
-	"github.com/inercia/kubetnl/pkg/port"
+	"github.com/pschmitt/kubetnl/pkg/port"
 )
 
 func getService(name string, ports []corev1.ServicePort) *corev1.Service {

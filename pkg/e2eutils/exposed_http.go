@@ -15,9 +15,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
-	tnet "github.com/inercia/kubetnl/pkg/net"
-	prt "github.com/inercia/kubetnl/pkg/port"
-	"github.com/inercia/kubetnl/pkg/tunnel"
+	tnet "github.com/pschmitt/kubetnl/pkg/net"
+	prt "github.com/pschmitt/kubetnl/pkg/port"
+	"github.com/pschmitt/kubetnl/pkg/tunnel"
 )
 
 // WriteFunc is a function that implements the io.Writer interface.

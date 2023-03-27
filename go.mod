@@ -1,4 +1,4 @@
-module github.com/inercia/kubetnl
+module github.com/pschmitt/kubetnl
 
 go 1.16
 

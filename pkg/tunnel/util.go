@@ -3,7 +3,7 @@ package tunnel
 import (
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/inercia/kubetnl/pkg/port"
+	"github.com/pschmitt/kubetnl/pkg/port"
 )
 
 func protocolToCoreV1(p port.Protocol) corev1.Protocol {

@@ -15,8 +15,8 @@ import (
 	watchtools "k8s.io/client-go/tools/watch"
 	"k8s.io/klog/v2"
 
-	"github.com/inercia/kubetnl/pkg/graceful"
-	"github.com/inercia/kubetnl/pkg/port"
+	"github.com/pschmitt/kubetnl/pkg/graceful"
+	"github.com/pschmitt/kubetnl/pkg/port"
 )
 
 var kubetnlPodContainerName = "main"

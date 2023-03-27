@@ -10,8 +10,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
-	"github.com/inercia/kubetnl/pkg/port"
-	"github.com/inercia/kubetnl/pkg/portforward"
+	"github.com/pschmitt/kubetnl/pkg/port"
+	"github.com/pschmitt/kubetnl/pkg/portforward"
 )
 
 type TunnelConfig struct {
