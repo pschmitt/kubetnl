@@ -3,7 +3,7 @@ module github.com/pschmitt/kubetnl
 go 1.16
 
 require (
-	github.com/inercia/kubernetes-e2e-utils v0.0.0-20220706100256-fb4c9cc55aa4
+	github.com/inercia/kubernetes-e2e-utils v0.0.0-20220707165028-d70af38e4226
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/spf13/cobra v1.4.0
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d
